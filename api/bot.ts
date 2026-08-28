@@ -3,10 +3,10 @@ import crypto from 'crypto';
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN as string);
 
-// Função para fazer o handshake criptografado e pedir o link de afiliado
 async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
-    const appId = process.env.SHOPEE_APP_ID;
-    const appSecret = process.env.SHOPEE_APP_SECRET;
+    // Usamos .trim() para garantir que não haja espaços vazios acidentais nas chaves
+    const appId = process.env.SHOPEE_APP_ID?.trim();
+    const appSecret = process.env.SHOPEE_APP_SECRET?.trim();
 
     if (!appId || !appSecret) {
         console.error("ERRO: SHOPEE_APP_ID ou SHOPEE_APP_SECRET não foram configurados na Vercel.");
@@ -15,19 +15,17 @@ async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
 
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // Payload da query GraphQL oficial da Shopee
+    // 1. Define o Payload exato em string para garantir paridade total entre o Hash e o Fetch Body
     const payload = JSON.stringify({
-        query: `mutation {
-            generateShortLink(input: { originUrl: "${originUrl}" }) {
-                shortLink
-            }
-        }`
+        query: `mutation { generateShortLink(input: { originUrl: "${originUrl}" }) { shortLink } }`
     });
 
-    // Criptografia HMAC-SHA256 necessária para autenticação na Shopee
+    // 2. Concatenação oficial da Shopee Afiliados: AppId + Timestamp + Payload + Secret
     const baseString = appId + timestamp + payload + appSecret;
+
+    // 3. Hash SHA256 simples (createHash em vez de createHmac)
     const signature = crypto
-        .createHmac('sha256', appSecret)
+        .createHash('sha256')
         .update(baseString)
         .digest('hex');
 
@@ -56,30 +54,26 @@ async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
     }
 }
 
-// Escutador de mensagens no Telegram
 bot.on('text', async (ctx) => {
     const texto = ctx.message.text;
 
-    // Identifica se a mensagem contém um link da Shopee
     if (texto.includes('shopee.com') || texto.includes('shp.ee')) {
-        // Isola apenas o link caso venha acompanhado de outros textos
         const regexUrl = /https?:\/\/[^\s]+/;
         const match = texto.match(regexUrl);
         const urlOriginal = match ? match[0] : texto;
 
         await ctx.reply('⏳ Convertendo seu link...');
-        
+
         const linkAfiliado = await gerarLinkAfiliadoShopee(urlOriginal);
-        
+
         await ctx.reply(`🛒 *Aqui está o seu link de afiliado:*\n\n${linkAfiliado}`, {
             parse_mode: 'Markdown'
         });
     } else {
-        await ctx.reply('Por favor, me envie um link válido da Shopee para que eu possa converter!');
+        await ctx.reply('Por favor, me envie um link válido da Shopee para converter!');
     }
 });
 
-// Handler do Webhook na Vercel
 export default async function handler(req: any, res: any) {
     if (req.method === 'POST') {
         await bot.handleUpdate(req.body);
