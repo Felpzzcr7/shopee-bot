@@ -3,8 +3,24 @@ import crypto from 'crypto';
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN as string);
 
+// Função para "desencurtar" links do app (s.shopee.com.br, shope.ee, shp.ee)
+async function expandirUrl(urlCurta: string): Promise<string> {
+    try {
+        const response = await fetch(urlCurta, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+        return response.url || urlCurta;
+    } catch (error) {
+        console.error("Erro ao expandir URL:", error);
+        return urlCurta;
+    }
+}
+
 async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
-    // Usamos .trim() para garantir que não haja espaços vazios acidentais nas chaves
     const appId = process.env.SHOPEE_APP_ID?.trim();
     const appSecret = process.env.SHOPEE_APP_SECRET?.trim();
 
@@ -13,17 +29,18 @@ async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
         return "Erro de configuração no servidor.";
     }
 
+    let urlFinal = originUrl;
+    if (originUrl.includes('shp.ee') || originUrl.includes('shope.ee') || originUrl.includes('s.shopee.com')) {
+        urlFinal = await expandirUrl(originUrl);
+    }
+
     const timestamp = Math.floor(Date.now() / 1000);
 
-    // 1. Define o Payload exato em string para garantir paridade total entre o Hash e o Fetch Body
     const payload = JSON.stringify({
-        query: `mutation { generateShortLink(input: { originUrl: "${originUrl}" }) { shortLink } }`
+        query: `mutation { generateShortLink(input: { originUrl: "${urlFinal}" }) { shortLink } }`
     });
 
-    // 2. Concatenação oficial da Shopee Afiliados: AppId + Timestamp + Payload + Secret
     const baseString = appId + timestamp + payload + appSecret;
-
-    // 3. Hash SHA256 simples (createHash em vez de createHmac)
     const signature = crypto
         .createHash('sha256')
         .update(baseString)
@@ -54,15 +71,22 @@ async function gerarLinkAfiliadoShopee(originUrl: string): Promise<string> {
     }
 }
 
-bot.on('text', async (ctx) => {
-    const texto = ctx.message.text;
+// Escuta MENSAGENS DE TEXTO e MENSAGENS COM FOTO/LEGENDA (compartilhamento do app)
+bot.on(['text', 'photo'], async (ctx) => {
+    const msg = ctx.message as any;
+    
+    // Captura o texto tanto se for mensagem normal quanto se for legenda de foto
+    const texto = msg?.text || msg?.caption || '';
 
-    if (texto.includes('shopee.com') || texto.includes('shp.ee')) {
+    const dominiosShopee = ['shopee.com', 'shp.ee', 'shope.ee', 's.shopee.com'];
+    const temLinkShopee = dominiosShopee.some(dominio => texto.includes(dominio));
+
+    if (temLinkShopee) {
         const regexUrl = /https?:\/\/[^\s]+/;
         const match = texto.match(regexUrl);
         const urlOriginal = match ? match[0] : texto;
 
-        await ctx.reply('⏳ Convertendo seu link...');
+        await ctx.reply('⏳ Processando link compartilhado...');
 
         const linkAfiliado = await gerarLinkAfiliadoShopee(urlOriginal);
 
