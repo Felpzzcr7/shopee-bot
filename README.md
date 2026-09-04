@@ -15,7 +15,7 @@
 
 Você pode testar a conversão de links enviando qualquer produto da Shopee diretamente no Telegram:
 
-👉 **[Clique aqui para abrir o Bot no Telegram](https://t.me/@Felpzz_shopee_bot)**
+👉 **[Clique aqui para abrir o Bot no Telegram](https://t.me/Felpzz_shopee_bot)**
 
 * **Formas de envio aceitas:**
   * Cola direta do link completo (`https://shopee.com.br/...`)
